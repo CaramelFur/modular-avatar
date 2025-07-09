@@ -2,7 +2,9 @@
 
 using System;
 using System.Collections.Generic;
+using JetBrains.Annotations;
 using UnityEngine;
+using VRC.SDK3.Avatars.ScriptableObjects;
 
 #endregion
 
@@ -61,7 +63,60 @@ namespace nadena.dev.modular_avatar.core
     public class ModularAvatarParameters : AvatarTagComponent
     {
         public List<ParameterConfig> parameters = new List<ParameterConfig>();
+        [CanBeNull] public VRCExpressionParameters vrcParameters = null;
+        
+        private new void OnValidate()
+        {
+            base.OnValidate();
+            
+            if (vrcParameters != null)
+            {
+                this.ImportValues();
+            }
+        }
 
+        public void ImportValues()
+        {
+#if UNITY_EDITOR
+            var source = this.vrcParameters;
+            if (source == null)
+            {
+                return;
+            }
+            
+            RuntimeUtil.InvalidateMenu();
+
+            var newParameters = new List<ParameterConfig>();
+            
+            foreach (var parameter in source.parameters)
+            {
+                ParameterSyncType pst;
+
+                switch (parameter.valueType)
+                {
+                    case VRCExpressionParameters.ValueType.Bool: pst = ParameterSyncType.Bool; break;
+                    case VRCExpressionParameters.ValueType.Float: pst = ParameterSyncType.Float; break;
+                    case VRCExpressionParameters.ValueType.Int: pst = ParameterSyncType.Int; break;
+                    default: pst = ParameterSyncType.Float; break;
+                }
+
+                newParameters.Add(new ParameterConfig()
+                {
+                    internalParameter = false,
+                    nameOrPrefix = parameter.name,
+                    isPrefix = false,
+                    remapTo = "",
+                    syncType = pst,
+                    localOnly = !parameter.networkSynced,
+                    defaultValue = parameter.defaultValue,
+                    saved = parameter.saved,
+                });
+            }
+            
+            this.parameters = newParameters;
+#endif
+        }
+        
         public override void ResolveReferences()
         {
             // no-op

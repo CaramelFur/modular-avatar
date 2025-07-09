@@ -346,6 +346,7 @@ namespace nadena.dev.modular_avatar.core.editor
             var p = obj.GetComponent<ModularAvatarParameters>();
             if (p != null)
             {
+                p.ImportValues();
                 rv = BuildReport.ReportingObject(p, () => CollectParameters(p, paramInfo.GetParameterRemappingsAt(p, true)));
             }
 

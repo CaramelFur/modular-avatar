@@ -32,7 +32,12 @@
             />
     </ui:Foldout>
     
-    <editor:ObjectField name="p_import" label="merge_parameter.ui.importFromAsset" class="ndmf-tr"/>
+    <ui:VisualElement class="horizontal">
+        <ui:Button name="b_SaveImport" text="Save Import" />
+        <ui:Button name="b_Refresh" text="Refresh" />
+    </ui:VisualElement>
+    
+    <editor:ObjectField name="vrcParameters" binding-path="vrcParameters" label="merge_parameter.ui.importFromAsset" class="ndmf-tr"/>
     
     <ma:LanguageSwitcherElement/>
 </UXML>

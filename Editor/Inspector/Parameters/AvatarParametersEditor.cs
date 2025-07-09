@@ -1,7 +1,9 @@
 ﻿#if MA_VRCSDK3_AVATARS && UNITY_2022_1_OR_NEWER
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using nadena.dev.ndmf.util;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -15,14 +17,14 @@ namespace nadena.dev.modular_avatar.core.editor
 {
     [CustomEditor(typeof(ModularAvatarParameters))]
     internal class AvatarParametersEditor : MAEditorBase
-    {        
+    {
         [SerializeField] private StyleSheet uss;
         [SerializeField] private VisualTreeAsset uxml;
 
         private ListView listView, unregisteredListView;
 
         private List<DetectedParameter> detectedParameters = new List<DetectedParameter>();
-        
+
         protected override void OnInnerInspectorGUI()
         {
             EditorGUILayout.HelpBox("Unable to show override changes", MessageType.Info);
@@ -30,12 +32,15 @@ namespace nadena.dev.modular_avatar.core.editor
 
         protected override VisualElement CreateInnerInspectorGUI()
         {
+            var target = (ModularAvatarParameters)this.target;
+            target.ImportValues();
+
             var root = uxml.CloneTree();
             UI.Localize(root);
             root.styleSheets.Add(uss);
-            
+
             listView = root.Q<ListView>("Parameters");
-            
+            listView.SetEnabled(target.vrcParameters == null);
             listView.showBoundCollectionSize = false;
             listView.virtualizationMethod = CollectionVirtualizationMethod.DynamicHeight;
             listView.selectionType = SelectionType.Multiple;
@@ -44,11 +49,11 @@ namespace nadena.dev.modular_avatar.core.editor
                 if (evt.keyCode == KeyCode.Delete && evt.modifiers == EventModifiers.FunctionKey)
                 {
                     serializedObject.Update();
-                    
+
                     var prop = serializedObject.FindProperty("parameters");
 
                     var indices = listView.selectedIndices.ToList();
-                    
+
                     foreach (var index in indices.OrderByDescending(i => i))
                     {
                         prop.DeleteArrayElementAtIndex(index);
@@ -69,7 +74,7 @@ namespace nadena.dev.modular_avatar.core.editor
                     evt.StopPropagation();
                 }
             }, TrickleDown.NoTrickleDown);
-            
+
             unregisteredListView = root.Q<ListView>("UnregisteredParameters");
 
             unregisteredListView.showBoundCollectionSize = false;
@@ -86,7 +91,7 @@ namespace nadena.dev.modular_avatar.core.editor
             {
                 var parameter = detectedParameters[i];
                 elem.Clear();
-                
+
                 var button = new Button();
                 button.text = "merge_parameter.ui.add_button";
                 button.AddToClassList("ndmf-tr");
@@ -108,11 +113,8 @@ namespace nadena.dev.modular_avatar.core.editor
                     var image = new Image();
                     sourceButton.Add(image);
                     image.image = tex;
-                    
-                    sourceButton.clicked += () =>
-                    {
-                        EditorGUIUtility.PingObject(parameter.Source);
-                    };
+
+                    sourceButton.clicked += () => { EditorGUIUtility.PingObject(parameter.Source); };
                     elem.Add(sourceButton);
                 }
 
@@ -123,17 +125,12 @@ namespace nadena.dev.modular_avatar.core.editor
                     var target = (ModularAvatarParameters)this.target;
                     target.parameters.Add(new ParameterConfig()
                     {
-                        internalParameter = false,
-                        nameOrPrefix = parameter.OriginalName,
-                        isPrefix = parameter.IsPrefix,
-                        remapTo = "",
-                        syncType = parameter.syncType,
-                        defaultValue = parameter.defaultValue,
-                        saved = parameter.saved,
+                        internalParameter = false, nameOrPrefix = parameter.OriginalName, isPrefix = parameter.IsPrefix, remapTo = ""
+                        , syncType = parameter.syncType, defaultValue = parameter.defaultValue, saved = parameter.saved,
                     });
                     EditorUtility.SetDirty(target);
                     PrefabUtility.RecordPrefabInstancePropertyModifications(target);
-                    
+
                     unregisteredListView.RefreshItems();
                     listView.RefreshItems();
                     listView.selectedIndex = target.parameters.Count - 1;
@@ -141,7 +138,7 @@ namespace nadena.dev.modular_avatar.core.editor
             };
 
             unregisteredListView.itemsSource = detectedParameters;
-            
+
             var unregisteredFoldout = root.Q<Foldout>("UnregisteredFoldout");
             unregisteredFoldout.RegisterValueChangedCallback(evt =>
             {
@@ -150,7 +147,7 @@ namespace nadena.dev.modular_avatar.core.editor
                     DetectParameters();
                 }
             });
-            
+
             root.Bind(serializedObject);
 
             listView.itemsRemoved += _ =>
@@ -163,66 +160,32 @@ namespace nadena.dev.modular_avatar.core.editor
                 }
             };
 
-            var importProp = root.Q<ObjectField>("p_import");
-            importProp.RegisterValueChangedCallback(evt =>
-            {
-                ImportValues(importProp);
-                importProp.SetValueWithoutNotify(null);
-            });
+            var importProp = root.Q<ObjectField>("vrcParameters");
             importProp.objectType = typeof(VRCExpressionParameters);
             importProp.allowSceneObjects = false;
-            
+
+            importProp.RegisterValueChangedCallback(evt =>
+            {
+                // Disable listview if we have a VRCExpressionParameters object
+                listView.SetEnabled(evt.newValue == null);
+            });
+
+            var buttonSaveImport = root.Q<Button>("b_SaveImport");
+            buttonSaveImport.clicked += () =>
+            {
+                target.ImportValues();
+                target.vrcParameters = null;
+                DetectParameters();
+            };
+
+            var buttonRefresh = root.Q<Button>("b_Refresh");
+            buttonRefresh.clicked += () =>
+            {
+                target.ImportValues();
+                DetectParameters();
+            };
+
             return root;
-        }
-
-        private void ImportValues(ObjectField importProp)
-        {
-            var known = new HashSet<string>();
-            
-            var target = (ModularAvatarParameters)this.target;
-            foreach (var parameter in target.parameters)
-            {
-                if (!parameter.isPrefix)
-                {
-                    known.Add(parameter.nameOrPrefix);
-                }
-            }
-            
-            Undo.RecordObject(target, "Import parameters");
-            
-            var source = (VRCExpressionParameters)importProp.value;
-            if (source == null)
-            {
-                return;
-            }
-            
-            foreach (var parameter in source.parameters)
-            {
-                if (!known.Contains(parameter.name))
-                {
-                    ParameterSyncType pst;
-
-                    switch (parameter.valueType)
-                    {
-                        case VRCExpressionParameters.ValueType.Bool: pst = ParameterSyncType.Bool; break;
-                        case VRCExpressionParameters.ValueType.Float: pst = ParameterSyncType.Float; break;
-                        case VRCExpressionParameters.ValueType.Int: pst = ParameterSyncType.Int; break;
-                        default: pst = ParameterSyncType.Float; break;
-                    }
-
-                    target.parameters.Add(new ParameterConfig()
-                    {
-                        internalParameter = false,
-                        nameOrPrefix = parameter.name,
-                        isPrefix = false,
-                        remapTo = "",
-                        syncType = pst,
-                        localOnly = !parameter.networkSynced,
-                        defaultValue = parameter.defaultValue,
-                        saved = parameter.saved,
-                    });
-                }
-            }
         }
 
         private void DetectParameters()
@@ -242,7 +205,7 @@ namespace nadena.dev.modular_avatar.core.editor
                     known.Add(parameter.nameOrPrefix);
                 }
             }
-                    
+
             var detected = ParameterPolicy.ProbeParameters(target.gameObject);
             detectedParameters.Clear();
             detectedParameters.AddRange(

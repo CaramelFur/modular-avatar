@@ -104,3 +104,8 @@ DefaultValueField > * {
     height: 24px;
     padding: 1px;
 }
+
+.horizontal > Button {
+    flex: 1;
+    height: 100%;
+}
